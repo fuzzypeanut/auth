@@ -1,0 +1,57 @@
+# Authentik blueprint — FuzzyPeanut initial setup
+# Applies on first boot to configure the shell OIDC application,
+# branding, and default groups.
+#
+# Place this file at blueprints/custom/fuzzypeanut.yaml in the Authentik
+# container (mounted via the docker-compose volumes config).
+# Authentik applies blueprints automatically on startup.
+
+version: 1
+metadata:
+  name: FuzzyPeanut Setup
+  labels:
+    blueprints.goauthentik.io/description: "FuzzyPeanut initial configuration"
+
+entries:
+  # ── Default groups ──────────────────────────────────────────────────────────
+  - model: authentik_core.group
+    identifiers:
+      name: fuzzypeanut-users
+    attrs:
+      name: fuzzypeanut-users
+
+  - model: authentik_core.group
+    identifiers:
+      name: fuzzypeanut-admins
+    attrs:
+      name: fuzzypeanut-admins
+
+  # ── Shell OIDC application ───────────────────────────────────────────────────
+  - model: authentik_providers_oauth2.oauth2provider
+    identifiers:
+      name: FuzzyPeanut Shell
+    attrs:
+      name: FuzzyPeanut Shell
+      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+      client_type: public
+      # Client ID — must match VITE_OIDC_CLIENT_ID in shell
+      client_id: fuzzypeanut-shell
+      redirect_uris: |
+        http://localhost:5173/auth/callback
+        https://app.fuzzypeanut.local/auth/callback
+      include_claims_in_id_token: true
+      sub_mode: hashed_user_id
+      issuer_mode: per_provider
+      access_token_validity: "hours=1"
+      refresh_token_validity: "days=30"
+      signing_key: !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
+
+  - model: authentik_core.application
+    identifiers:
+      slug: fuzzypeanut
+    attrs:
+      name: FuzzyPeanut
+      slug: fuzzypeanut
+      provider: !Find [authentik_providers_oauth2.oauth2provider, [name, FuzzyPeanut Shell]]
+      meta_launch_url: http://localhost:5173/
+      policy_engine_mode: any
