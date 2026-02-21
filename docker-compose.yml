@@ -54,7 +54,23 @@ services:
     volumes:
       - authentik-redis:/data
 
+  provisioning:
+    build: ./provisioning
+    environment:
+      WEBHOOK_SECRET: ${PROVISIONING_WEBHOOK_SECRET:-}
+      STALWART_API: ${STALWART_API:-http://stalwart:8080}
+      STALWART_TOKEN: ${STALWART_TOKEN:-}
+      MAIL_DOMAIN: ${MAIL_DOMAIN:-fuzzypeanut.local}
+      FAILURES_FILE: /data/provisioning-failures.jsonl
+    volumes:
+      - provisioning-data:/data
+    ports:
+      - "3200:3200"
+    depends_on:
+      - authentik-server
+
 volumes:
   authentik-media:
   authentik-db:
   authentik-redis:
+  provisioning-data:

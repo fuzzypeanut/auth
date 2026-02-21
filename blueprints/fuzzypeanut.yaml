@@ -2,9 +2,11 @@
 # Applies on first boot to configure the shell OIDC application,
 # branding, and default groups.
 #
-# Place this file at blueprints/custom/fuzzypeanut.yaml in the Authentik
-# container (mounted via the docker-compose volumes config).
-# Authentik applies blueprints automatically on startup.
+# Mounted into the Authentik container at blueprints/custom/fuzzypeanut.yaml
+# via the docker-compose volumes config. Applied automatically on startup.
+# Idempotent — safe to re-apply.
+#
+# Requires: Authentik 2024.4+ (redirect_uris list-of-objects format)
 
 version: 1
 metadata:
@@ -13,7 +15,8 @@ metadata:
     blueprints.goauthentik.io/description: "FuzzyPeanut initial configuration"
 
 entries:
-  # ── Default groups ──────────────────────────────────────────────────────────
+  # ── Default groups ────────────────────────────────────────────────────────────
+
   - model: authentik_core.group
     identifiers:
       name: fuzzypeanut-users
@@ -26,7 +29,22 @@ entries:
     attrs:
       name: fuzzypeanut-admins
 
-  # ── Shell OIDC application ───────────────────────────────────────────────────
+  # ── Groups scope mapping ──────────────────────────────────────────────────────
+  # Adds a 'groups' claim to the OIDC token containing the user's group names.
+  # Used by modules for access control via sdk.auth.getUser().groups.
+
+  - model: authentik_providers_oauth2.scopemapping
+    identifiers:
+      name: FuzzyPeanut Groups Scope
+    attrs:
+      name: FuzzyPeanut Groups Scope
+      scope_name: groups
+      description: "Group membership for FuzzyPeanut module access control"
+      expression: |
+        return list(request.user.ak_groups.values_list("name", flat=True))
+
+  # ── Shell OIDC provider ───────────────────────────────────────────────────────
+
   - model: authentik_providers_oauth2.oauth2provider
     identifiers:
       name: FuzzyPeanut Shell
@@ -34,17 +52,30 @@ entries:
       name: FuzzyPeanut Shell
       authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
       client_type: public
-      # Client ID — must match VITE_OIDC_CLIENT_ID in shell
+      # Must match VITE_OIDC_CLIENT_ID in the shell
       client_id: fuzzypeanut-shell
-      redirect_uris: |
-        http://localhost:5173/auth/callback
-        https://app.fuzzypeanut.local/auth/callback
+      # Authentik 2024.4+ format — list of objects with url + matching_mode
+      redirect_uris:
+        - url: "http://localhost:5173/auth/callback"
+          matching_mode: strict
+        - url: "https://app.fuzzypeanut.local/auth/callback"
+          matching_mode: strict
       include_claims_in_id_token: true
       sub_mode: hashed_user_id
       issuer_mode: per_provider
       access_token_validity: "hours=1"
       refresh_token_validity: "days=30"
       signing_key: !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
+      # Wire all required scopes — openid/email/profile/offline_access from Authentik
+      # built-ins, plus our custom groups mapping above.
+      property_mappings:
+        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, openid]]
+        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, email]]
+        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, profile]]
+        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, offline_access]]
+        - !Find [authentik_providers_oauth2.scopemapping, [name, FuzzyPeanut Groups Scope]]
+
+  # ── Application ───────────────────────────────────────────────────────────────
 
   - model: authentik_core.application
     identifiers:
